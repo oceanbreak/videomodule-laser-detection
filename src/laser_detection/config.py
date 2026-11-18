@@ -5,6 +5,8 @@ from pathlib import Path
 
 import yaml
 
+from .calibration_settings import CalibrationSettings
+
 
 @dataclass(frozen=True)
 class Config:
@@ -14,6 +16,8 @@ class Config:
     width: int
     height: int
     output_dir: Path
+    calibration: CalibrationSettings = CalibrationSettings()
+    calibration_output_dir: Path = Path("results/calibration")
 
 
 def load_config(path: str | Path | None = None) -> Config:
@@ -49,6 +53,15 @@ def load_config(path: str | Path | None = None) -> Config:
             raise ValueError(f"{path}: image.{key} must be a positive integer")
         return value
 
+    try:
+        calibration = CalibrationSettings(**content.get("calibration", {}))
+    except (AttributeError, TypeError, ValueError) as error:
+        raise ValueError(f"{path}: invalid calibration settings: {error}") from error
+
+    calibration_output = (path.parent / "results/calibration").resolve()
+    if isinstance(content.get("output"), dict) and "calibration_directory" in content["output"]:
+        calibration_output = local_path("output", "calibration_directory")
+
     return Config(
         annotations_csv=local_path("data", "annotations_csv"),
         setups_csv=local_path("data", "setups_csv"),
@@ -56,4 +69,6 @@ def load_config(path: str | Path | None = None) -> Config:
         width=dimension("width"),
         height=dimension("height"),
         output_dir=local_path("output", "directory"),
+        calibration=calibration,
+        calibration_output_dir=calibration_output,
     )

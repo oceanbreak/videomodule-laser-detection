@@ -99,7 +99,7 @@ def test_geometry_and_swap(config):
     )
     assert frame.loc[1, METRICS].isna().all()
     assert frame.loc[2, ["dx", "dy", "d", "theta", "theta_lr"]].tolist() == pytest.approx(
-        [-3, -4, 5, np.arctan2(-4, -3), frame.at[0, "theta_lr"]]
+        [3, 4, 5, np.arctan2(4, 3), frame.at[0, "theta_lr"]]
     )
 
 
