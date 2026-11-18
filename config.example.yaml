@@ -1,0 +1,9 @@
+data:
+  annotations_csv: "data/lasers.csv"
+  setups_csv: "data/laser_setups.csv"
+  images_dir: "images"
+image:
+  width: 3072
+  height: 2048
+output:
+  directory: "results/inspection"
