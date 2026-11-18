@@ -2,12 +2,14 @@ data:
   annotations_csv: "data/lasers.csv"
   setups_csv: "data/laser_setups.csv"
   images_dir: "images"
+  # series_csv: "data/capture_series.csv"
 image:
   width: 3072
   height: 2048
 output:
   directory: "results/inspection"
   calibration_directory: "results/calibration"
+  detection_directory: "results/detection_baselines"
 calibration:
   ransac_threshold: 10
   ransac_trials: 256
@@ -17,3 +19,18 @@ calibration:
   contamination_fractions: [0, 0.05, 0.10, 0.20, 0.30]
   contamination_training_size: 50
   random_state: 42
+detection:
+  width: 1536
+  height: 1024
+  hls:
+    hue_range_1: [0, 10]
+    hue_range_2: [170, 180]
+    lightness_min: 40
+    lightness_max: 255
+    saturation_min: 100
+    saturation_max: 255
+  red_boost:
+    boost_threshold: 40
+  warmup_frames: 5
+  opencv_threads: 1
+  split_seed: 42

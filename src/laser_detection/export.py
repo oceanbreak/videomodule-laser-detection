@@ -35,10 +35,37 @@ def export_calibration(study, figures, config: Config) -> list[Path]:
     return _write_outputs(tables, figures, metadata, config.calibration_output_dir, config, "calibration")
 
 
+def export_detection(scored, splits, metrics, by_setup, timings, environment, figures, config):
+    tables = {
+        "predictions_hls.csv": scored.loc[scored["method"].eq("hls")],
+        "predictions_red_boost.csv": scored.loc[scored["method"].eq("red_boost")],
+        "metrics_by_method.csv": metrics,
+        "metrics_by_setup.csv": by_setup,
+        "timings.csv": timings,
+        "dataset_split.csv": splits,
+    }
+    metadata = {"experiment_config.json": {
+        "detection": asdict(config.detection),
+        "original_size": [config.width, config.height],
+        "split_type": "capture_series" if config.series_csv else "exploratory",
+        "benchmark": environment,
+    }}
+    output = config.detection_output_dir.resolve()
+    figure_dir = output / "figures"
+    if figure_dir.resolve() != figure_dir:
+        raise ValueError(f"Unsafe export destination: {figure_dir}")
+    return [
+        *_write_outputs(tables, {}, metadata, output, config, "detection"),
+        *_write_outputs({}, figures, {}, figure_dir, config, "detection"),
+    ]
+
+
 def _write_outputs(tables, figures, metadata, output, config, prefix):
     charts = {f"{name}.html": figure for name, figure in figures.items()}
     output = output.resolve()
     inputs = {config.annotations_csv.resolve(), config.setups_csv.resolve()}
+    if config.series_csv is not None:
+        inputs.add(config.series_csv.resolve())
     destinations = [output / name for name in (*tables, *metadata, *charts)]
     for path in destinations:
         if path.parent != output or path.resolve().parent != output or path.resolve() in inputs:

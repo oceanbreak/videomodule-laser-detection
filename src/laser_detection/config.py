@@ -6,6 +6,7 @@ from pathlib import Path
 import yaml
 
 from .calibration_settings import CalibrationSettings
+from .detection_settings import DetectionSettings
 
 
 @dataclass(frozen=True)
@@ -18,6 +19,9 @@ class Config:
     output_dir: Path
     calibration: CalibrationSettings = CalibrationSettings()
     calibration_output_dir: Path = Path("results/calibration")
+    detection: DetectionSettings = DetectionSettings()
+    detection_output_dir: Path = Path("results/detection_baselines")
+    series_csv: Path | None = None
 
 
 def load_config(path: str | Path | None = None) -> Config:
@@ -53,22 +57,42 @@ def load_config(path: str | Path | None = None) -> Config:
             raise ValueError(f"{path}: image.{key} must be a positive integer")
         return value
 
+    annotations_csv = local_path("data", "annotations_csv")
+    setups_csv = local_path("data", "setups_csv")
+    images_dir = local_path("data", "images_dir")
+    output_dir = local_path("output", "directory")
+
     try:
         calibration = CalibrationSettings(**content.get("calibration", {}))
     except (AttributeError, TypeError, ValueError) as error:
         raise ValueError(f"{path}: invalid calibration settings: {error}") from error
 
     calibration_output = (path.parent / "results/calibration").resolve()
-    if isinstance(content.get("output"), dict) and "calibration_directory" in content["output"]:
+    if "calibration_directory" in content["output"]:
         calibration_output = local_path("output", "calibration_directory")
 
+    try:
+        detection = DetectionSettings(**content.get("detection", {}))
+    except (TypeError, ValueError) as error:
+        raise ValueError(f"{path}: invalid detection settings: {error}") from error
+
+    detection_output = (path.parent / "results/detection_baselines").resolve()
+    if "detection_directory" in content["output"]:
+        detection_output = local_path("output", "detection_directory")
+    series_csv = None
+    if content.get("data", {}).get("series_csv") is not None:
+        series_csv = local_path("data", "series_csv")
+
     return Config(
-        annotations_csv=local_path("data", "annotations_csv"),
-        setups_csv=local_path("data", "setups_csv"),
-        images_dir=local_path("data", "images_dir"),
+        annotations_csv=annotations_csv,
+        setups_csv=setups_csv,
+        images_dir=images_dir,
         width=dimension("width"),
         height=dimension("height"),
-        output_dir=local_path("output", "directory"),
+        output_dir=output_dir,
         calibration=calibration,
         calibration_output_dir=calibration_output,
+        detection=detection,
+        detection_output_dir=detection_output,
+        series_csv=series_csv,
     )
