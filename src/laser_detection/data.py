@@ -61,6 +61,15 @@ def load_annotations(path: Path, width: int = 3072, height: int = 2048) -> pd.Da
     partial = ~counts.isin([0, 4])
     if partial.any():
         raise ValueError(f"{path}: {frame.loc[partial, 'image'].iloc[0]!r}: expected all four coordinates or none")
+    # Normalize laser order at the data boundary: point 1 is always left.
+    # For equal X, prefer the upper point first for deterministic ordering.
+    swap = (frame["x1"] > frame["x2"]) | (
+        (frame["x1"] == frame["x2"]) & (frame["y1"] > frame["y2"])
+    )
+    if swap.any():
+        frame.loc[swap, COORDINATES] = frame.loc[
+            swap, ["x2", "y2", "x1", "y1"]
+        ].to_numpy()
     return frame
 
 
