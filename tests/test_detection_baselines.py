@@ -152,8 +152,8 @@ def test_benchmark_matches_cohorts_restores_threads_and_renders(config):
     threads = cv2.getNumThreads()
     predictions, environment = benchmark_dataset(frame, detectors, config)
     assert cv2.getNumThreads() == threads
-    assert len(predictions) == 4
-    assert predictions.groupby("method")["status"].apply(list).tolist() == [["ok", "image_error"]] * 2
+    assert len(predictions) == 8
+    assert predictions.groupby("method")["status"].apply(list).tolist() == [["ok", "image_error"]] * 4
     assert environment["warmup_frames_completed"] == 1
     assert environment["opencv_threads"] == 1 and environment["cpu"]
     timing = timing_summary(predictions)

@@ -1,6 +1,7 @@
 """Write standalone charts and inspection tables to local disk."""
 
 import json
+import re
 from dataclasses import asdict
 from pathlib import Path
 from tempfile import NamedTemporaryFile
@@ -35,10 +36,18 @@ def export_calibration(study, figures, config: Config) -> list[Path]:
     return _write_outputs(tables, figures, metadata, config.calibration_output_dir, config, "calibration")
 
 
-def export_detection(scored, splits, metrics, by_setup, timings, environment, figures, config):
+def export_detection(scored, splits, metrics, by_setup, timings, environment, figures, config, *,
+                     run_name="hsv_comparison"):
+    """Export to a new run directory. Existing detection exports are never replaced."""
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]*", run_name):
+        raise ValueError("run_name must contain only ASCII letters, digits, underscores and hyphens")
+    predictions = {}
+    for method, rows in scored.groupby("method", sort=False):
+        if not re.fullmatch(r"[a-z0-9_]+", method):
+            raise ValueError(f"Invalid detector name for export: {method!r}")
+        predictions[f"predictions_{method}.csv"] = rows
     tables = {
-        "predictions_hls.csv": scored.loc[scored["method"].eq("hls")],
-        "predictions_red_boost.csv": scored.loc[scored["method"].eq("red_boost")],
+        **predictions,
         "metrics_by_method.csv": metrics,
         "metrics_by_setup.csv": by_setup,
         "timings.csv": timings,
@@ -50,10 +59,12 @@ def export_detection(scored, splits, metrics, by_setup, timings, environment, fi
         "split_type": "capture_series" if config.series_csv else "exploratory",
         "benchmark": environment,
     }}
-    output = config.detection_output_dir.resolve()
+    output = config.detection_output_dir.resolve() / run_name
+    try:
+        output.mkdir(parents=True, exist_ok=False)
+    except FileExistsError as error:
+        raise FileExistsError(f"Detection run already exists: {output}. Choose a different run_name.") from error
     figure_dir = output / "figures"
-    if figure_dir.resolve() != figure_dir:
-        raise ValueError(f"Unsafe export destination: {figure_dir}")
     return [
         *_write_outputs(tables, {}, metadata, output, config, "detection"),
         *_write_outputs({}, figures, {}, figure_dir, config, "detection"),

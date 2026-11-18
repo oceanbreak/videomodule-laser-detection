@@ -17,7 +17,12 @@ def detection_figures(metrics, timings, split):
     quality = scores.melt(id_vars="method", value_vars=columns, var_name="metric", value_name="score")
     stages = ["resize_mean_ms", "threshold_mean_ms", "components_mean_ms", "total_mean_ms"]
     durations = timings.melt(id_vars="method", value_vars=stages, var_name="stage", value_name="ms")
+    recalls = quality.loc[quality["metric"].isin(f"recall_at_{t}px" for t in RECALL_THRESHOLDS)]
     return {
+        "recall_at_threshold": px.bar(
+            recalls, x="metric", y="score", color="method", barmode="group",
+            range_y=[0, 1], title=f"Localization recall by pixel tolerance · {split}",
+        ),
         "quality_comparison": px.bar(
             quality, x="metric", y="score", color="method", barmode="group",
             range_y=[0, 1], title=f"Pair detection and localization · {split}",
@@ -32,8 +37,13 @@ def detection_figures(metrics, timings, split):
 def diagnostic_figure(image, row, detectors):
     """Render one frame, comparing masks and predicted and annotated point centers."""
     detectors = tuple(detectors)
-    figure = Figure(figsize=(14, 4.8), layout="constrained")
-    axes = figure.subplots(1, len(detectors) + 1)
+    columns = min(3, len(detectors) + 1)
+    rows = (len(detectors) + columns) // columns
+    figure = Figure(figsize=(14, 4.6 * rows), layout="constrained")
+    grid = figure.subplots(rows, columns, squeeze=False).ravel()
+    axes = grid[:len(detectors) + 1]
+    for empty in grid[len(axes):]:
+        empty.remove()
     first, *others = axes
     reduced = detectors[0].resize(image)
     first.imshow(cv2.cvtColor(reduced, cv2.COLOR_BGR2RGB))
@@ -48,7 +58,9 @@ def diagnostic_figure(image, row, detectors):
                          s=85, linewidths=1.6, label=label)
 
     add_points(first, truth, detectors[0].size, "Annotation", "white", "o")
-    for axis, detector, color, marker in zip(others, detectors, ("cyan", "yellow"), ("s", "D")):
+    styles = (("cyan", "s"), ("yellow", "D"), ("magenta", "^"), ("lime", "v"))
+    for index, (axis, detector) in enumerate(zip(others, detectors)):
+        color, marker = styles[index % len(styles)]
         prediction = detector.detect(image, return_mask=True)
         points = np.array(prediction.coordinates).reshape(2, 2)
         axis.imshow(prediction.mask, cmap="gray", vmin=0, vmax=255)

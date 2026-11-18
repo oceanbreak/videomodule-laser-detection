@@ -1,6 +1,6 @@
 """Validated settings shared by the baseline detectors and benchmark."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, fields, replace
 from math import isfinite
 
 
@@ -48,6 +48,22 @@ class RedBoostSettings:
 
 
 @dataclass(frozen=True)
+class HSVSettings:
+    hue_range_1: tuple[int, int] = (0, 10)
+    hue_range_2: tuple[int, int] = (150, 179)
+    saturation_min: int = 100
+    saturation_max: int = 255
+    value_min: int = 150
+    value_max: int = 255
+
+    def __post_init__(self):
+        for name in ("hue_range_1", "hue_range_2"):
+            object.__setattr__(self, name, _range(name, getattr(self, name), 179))
+        _range("saturation", (self.saturation_min, self.saturation_max), 255)
+        _range("value", (self.value_min, self.value_max), 255)
+
+
+@dataclass(frozen=True)
 class DetectionSettings:
     width: int = 1536
     height: int = 1024
@@ -56,15 +72,23 @@ class DetectionSettings:
     warmup_frames: int = 5
     opencv_threads: int = 1
     split_seed: int = 42
+    hsv_legacy: HSVSettings = HSVSettings()
+    hsv_narrow: HSVSettings = HSVSettings(hue_range_2=(170, 179))
 
     def __post_init__(self):
         for name in ("width", "height", "opencv_threads"):
             _integer(name, getattr(self, name), 1)
         for name in ("warmup_frames", "split_seed"):
             _integer(name, getattr(self, name), 0)
-        if isinstance(self.hls, dict):
-            object.__setattr__(self, "hls", HLSSettings(**self.hls))
-        if isinstance(self.red_boost, dict):
-            object.__setattr__(self, "red_boost", RedBoostSettings(**self.red_boost))
-        if not isinstance(self.hls, HLSSettings) or not isinstance(self.red_boost, RedBoostSettings):
-            raise ValueError("hls and red_boost must be mappings")
+        defaults = {field.name: field.default for field in fields(self)}
+        for name, settings_type in (
+            ("hls", HLSSettings), ("red_boost", RedBoostSettings),
+            ("hsv_legacy", HSVSettings), ("hsv_narrow", HSVSettings),
+        ):
+            current = getattr(self, name)
+            if isinstance(current, dict):
+                # Apply partial overrides to the defaults of this specific variant.
+                current = replace(defaults[name], **current)
+                object.__setattr__(self, name, current)
+            if not isinstance(current, settings_type):
+                raise ValueError(f"{name} must be a mapping")

@@ -1,5 +1,7 @@
 """Group-aware evaluation and pair-level detection metrics."""
 
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 
@@ -99,3 +101,37 @@ def worst_cases(scored, method, split, count=10):
     ].copy()
     rows["_priority"] = rows["outcome"].map({"fn": 0, "fp": 1, "tp": 2})
     return rows.sort_values(["_priority", "pair_max_error_px", "image"], ascending=[True, False, True]).head(count).drop(columns="_priority")
+
+
+def comparison_table(metrics, timings, split):
+    """Combine the same summary columns from live data or previously exported CSVs."""
+    columns = ["method", "recall", *(f"recall_at_{t}px" for t in RECALL_THRESHOLDS),
+               "median_point_error_px"]
+    scores = metrics.loc[metrics["split"].eq(split), columns]
+    return scores.merge(timings[["method", "total_mean_ms"]], on="method",
+                        how="left", validate="one_to_one")
+
+
+def load_detection_comparison(directory, split):
+    """Rebuild the comparison from saved summaries without decoding images."""
+    directory = Path(directory)
+    metrics = pd.read_csv(directory / "metrics_by_method.csv")
+    timings = pd.read_csv(directory / "timings.csv")
+    if not metrics["split"].eq(split).any():
+        raise ValueError(f"Split {split!r} is not present in {directory}")
+    return comparison_table(metrics, timings, split)
+
+
+def localization_disagreements(scored, first, second, split, threshold=10):
+    """Return annotated frames where exactly one method localizes both points."""
+    rows = scored.loc[
+        scored["split"].eq(split) & scored["annotated"] & scored["status"].eq("ok"),
+        ["image", "setup_id", "method", "outcome", "pair_max_error_px"],
+    ]
+    left = rows.loc[rows["method"].eq(first)].drop(columns="method")
+    right = rows.loc[rows["method"].eq(second)].drop(columns=["method", "setup_id"])
+    paired = left.merge(right, on="image", suffixes=(f"_{first}", f"_{second}"), validate="one_to_one")
+    first_pass = paired[f"pair_max_error_px_{first}"].le(threshold)
+    second_pass = paired[f"pair_max_error_px_{second}"].le(threshold)
+    paired["better_method"] = np.where(first_pass, first, second)
+    return paired.loc[first_pass ^ second_pass]

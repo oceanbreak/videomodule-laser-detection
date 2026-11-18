@@ -2,6 +2,7 @@
 
 import platform
 from contextlib import contextmanager
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
 import cv2
@@ -56,7 +57,14 @@ def _environment():
                         if line.startswith("model name") and ":" in line), "")
         except OSError:
             pass
+    dependencies = {}
+    for package in ("numpy", "opencv-python", "pandas", "plotly", "matplotlib", "PyYAML", "ipywidgets"):
+        try:
+            dependencies[package] = version(package)
+        except PackageNotFoundError:
+            continue
     return {
+        "dependencies": dependencies,
         "cpu": cpu or platform.machine(),
         "platform": platform.platform(),
         "python_version": platform.python_version(),
@@ -84,15 +92,19 @@ def _warmup(frame, detectors, config):
 
 
 def benchmark_dataset(frame: pd.DataFrame, detectors, config):
-    """Run both methods serially per image, alternating the first method per readable frame."""
+    """Run methods serially per image, rotating the first method per readable frame."""
     detectors = tuple(detectors)
+    if not detectors or len({detector.name for detector in detectors}) != len(detectors):
+        raise ValueError("Provide one or more detectors with unique names")
+    if len({detector.size for detector in detectors}) != 1:
+        raise ValueError("All detectors must use the same processing size")
     columns = ["image", "setup_id", "method", "status", "message", "detected",
                "component_count", "area1", "area2", *COORDINATES, *STAGES]
     results = []
     with _opencv_threads(config.detection.opencv_threads):
         environment = _environment()
         environment["warmup_frames_completed"] = _warmup(frame, detectors, config)
-        environment["order"] = "serial per frame, alternating first detector"
+        environment["order"] = "serial per frame, rotating first detector"
         readable = 0
         for row in frame.itertuples(index=False):
             common = {"image": row.image, "setup_id": row.setup_id}
@@ -102,7 +114,8 @@ def benchmark_dataset(frame: pd.DataFrame, detectors, config):
                 results.extend({**common, "method": detector.name, "status": "image_error",
                                 "message": str(error)} for detector in detectors)
                 continue
-            order = detectors if readable % 2 == 0 else reversed(detectors)
+            offset = readable % len(detectors)
+            order = detectors[offset:] + detectors[:offset]
             for detector in order:
                 result = detector.detect(image)
                 results.append({
