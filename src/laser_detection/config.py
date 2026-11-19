@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Optional, Union
 
 import yaml
 
@@ -21,10 +22,10 @@ class Config:
     calibration_output_dir: Path = Path("results/calibration")
     detection: DetectionSettings = DetectionSettings()
     detection_output_dir: Path = Path("results/detection_baselines")
-    series_csv: Path | None = None
+    series_csv: Optional[Path] = None
 
 
-def load_config(path: str | Path | None = None) -> Config:
+def load_config(path: Optional[Union[str, Path]] = None) -> Config:
     """Read an explicit config or find config.local.yaml above the working directory."""
     if path is None:
         cwd = Path.cwd()

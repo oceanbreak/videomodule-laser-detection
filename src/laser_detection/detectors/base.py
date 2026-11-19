@@ -3,6 +3,7 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from time import perf_counter_ns
+from typing import Optional
 
 import cv2
 import numpy as np
@@ -20,13 +21,13 @@ class Detection:
     detected: bool
     coordinates: tuple[float, float, float, float]
     component_count: int
-    area1: int | None
-    area2: int | None
+    area1: Optional[int]
+    area2: Optional[int]
     resize_ns: int
     threshold_ns: int
     components_ns: int
     total_ns: int
-    mask: np.ndarray | None = None
+    mask: Optional[np.ndarray] = None
 
 
 class Detector(ABC):

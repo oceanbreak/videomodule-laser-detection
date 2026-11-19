@@ -4,16 +4,51 @@
 
 ## Установка и запуск
 
-Клонируйте репозиторий и запустите из его корня с Python 3.11.
+Проект поддерживает Python 3.9 и 3.11. Выполняйте команды из корня клонированного
+репозитория. Анализ данных, калибровка и цветовые детекторы работают на CPU.
+PyTorch и torchvision используются только опциональной диагностикой окружения
+и отсутствуют в зависимостях проекта, включая `[dev]`.
 
-```bash
-python3.11 -m venv .venv
-source .venv/bin/activate
-python -m pip install -e ".[dev]"
-cp config.example.yaml config.local.yaml
+### Windows CPU, Python 3.11
+
+В PowerShell создайте отдельное окружение.
+
+```powershell
+py -3.11 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -e ".[dev]"
+.\.venv\Scripts\python.exe -m pip check
+.\.venv\Scripts\python.exe -m laser_detection.check_environment
+Copy-Item config.example.yaml config.local.yaml
 ```
 
-В Windows PowerShell используйте `py -3.11 -m venv .venv`, `.venv\Scripts\Activate.ps1` и `Copy-Item config.example.yaml config.local.yaml`.
+При отсутствии PyTorch диагностика сообщает `CUDA forward/backward: SKIPPED` и
+завершается успешно в обычном режиме.
+
+### Windows GPU, Python 3.9, GTX 1070
+
+Активируйте **существующее** окружение с `torch==2.7.1` и
+`torchvision==0.22.1` из индекса PyTorch cu126. Используйте его `python`
+и проверьте путь к интерпретатору и версии пакетов до установки проекта.
+
+```powershell
+python -c "import sys, torch, torchvision; print(sys.executable); print(sys.version); print(torch.__version__, torchvision.__version__, torch.version.cuda)"
+python -m pip install -e ".[dev]"
+python -m pip check
+python -m laser_detection.check_environment --require-cuda
+```
+
+Установка проекта не запрашивает установку или замену PyTorch. Для
+`config.local.yaml` используйте существующий файл или скопируйте шаблон, если
+настраиваете проект впервые.
+
+GTX 1070 имеет compute capability 6.1. Строки `+cu126`, `CUDA available: True`
+и список архитектур сборки сами по себе не подтверждают выполнение ядер.
+Диагностика выводит модель GPU, compute capability, архитектуры сборки и cuDNN.
+Тест выполняет свёртку, вычисление loss и backward на выбранном GPU, синхронизирует
+CUDA и проверяет результаты и градиенты. `--require-cuda` возвращает ненулевой
+код при пропуске или ошибке. Если устройств несколько, укажите `--device N`.
+Статус `PASSED` подтверждает эти операции для проверенной связки GPU, драйвера
+и PyTorch. Проверку на GTX 1070 нужно выполнить на самой машине.
 
 Заполните `config.local.yaml`. Пути могут быть абсолютными или относительными к самому файлу конфигурации, в том числе за пределами репозитория. Для путей Windows в YAML используйте прямые косые черты или одинарные кавычки.
 
@@ -23,8 +58,11 @@ cp config.example.yaml config.local.yaml
 - `image.width` и `image.height` задают размер изображения. В шаблоне указан исходный размер 3072×2048.
 - `output.directory` задаёт локальный каталог экспорта.
 
-```bash
-jupyter lab
+Запустите JupyterLab через тот же интерпретатор. Для отдельного CPU-окружения
+замените `python` в команде на `.\.venv\Scripts\python.exe`.
+
+```powershell
+python -m jupyterlab
 ```
 
 Откройте `notebooks/01_dataset_inspection.ipynb` и выполните ячейки. В легенде пространственного графика можно скрыть или показать сразу обе серии точек выбранного сетапа. Просмотр кадра читает выбранную фотографию по нажатию кнопки. Углы измеряются в радианах в координатах изображения. Для нормализованного угла точки упорядочены слева направо, а вертикальная пара — сверху вниз.
@@ -41,7 +79,9 @@ jupyter lab
 python -m pytest
 ```
 
-Тесты создают синтетические CSV и тестовую фотографию во временных каталогах.
+Тесты создают синтетические CSV и изображения во временных каталогах и
+выполняют все три ноутбука. GitHub Actions запускает их на Windows с Python
+3.9 и 3.11 в CPU-окружениях. Проверка GTX 1070 выполняется отдельно.
 
 ## Геометрическая калибровка
 

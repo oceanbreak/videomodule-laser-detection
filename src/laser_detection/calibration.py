@@ -1,6 +1,7 @@
 """Independent orthogonal line fits and joint corridor evaluation."""
 
 from dataclasses import dataclass
+from typing import Optional
 
 import numpy as np
 import pandas as pd
@@ -99,7 +100,7 @@ def labeled_pairs(points: pd.DataFrame) -> pd.DataFrame:
 
 def fit_laser_lines(
     points: pd.DataFrame, config: CalibrationSettings = CalibrationSettings(), *,
-    random_state: int | None = None,
+    random_state: Optional[int] = None,
 ) -> LaserLines:
     """Fit models from pairs normalized at import. Rows with missing pairs are omitted."""
     coordinates = labeled_pairs(points)[COORDINATES].to_numpy(dtype=float)

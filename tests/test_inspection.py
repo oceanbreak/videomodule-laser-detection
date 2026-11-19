@@ -1,3 +1,5 @@
+import os
+
 import numpy as np
 import pytest
 from PIL import Image
@@ -148,12 +150,22 @@ def test_statistics_plot_groups_and_local_export(config):
     assert [path.read_bytes() for path in paths] == before
 
 
-def test_export_protects_source_csv(config):
+@pytest.mark.parametrize("link_method", ["hardlink", "symlink"])
+def test_export_protects_source_csv(config, link_method):
     frame = add_geometry(load_dataset(config))
     original = config.annotations_csv.read_bytes()
     config.output_dir.mkdir(parents=True)
-    (config.output_dir / "geometry.csv").symlink_to(config.annotations_csv)
-    with pytest.raises(ValueError, match="export destination"):
+    destination = config.output_dir / "geometry.csv"
+    try:
+        if link_method == "hardlink":
+            os.link(config.annotations_csv, destination)
+        else:
+            destination.symlink_to(config.annotations_csv)
+    except OSError as error:
+        if link_method == "symlink" and getattr(error, "winerror", None) == 1314:
+            pytest.skip("Creating symlinks requires Windows Developer Mode or elevated privileges")
+        raise
+    with pytest.raises(ValueError, match="Unsafe export destination|overwrite an input CSV"):
         export_inspection(frame, {}, config)
     assert config.annotations_csv.read_bytes() == original
     assert not (config.output_dir / "dataset_summary.csv").exists()
