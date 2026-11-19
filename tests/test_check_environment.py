@@ -28,7 +28,7 @@ def test_cuda_availability_does_not_mask_smoke_failure(monkeypatch, capsys):
         cuda=SimpleNamespace(
             is_available=lambda: True, device_count=lambda: 1,
             get_device_name=lambda _: "test device", get_device_capability=lambda _: (6, 1),
-            get_arch_list=lambda: ["sm_60"],
+            get_arch_list=lambda: ["sm_60"], mem_get_info=lambda _: (512 * 2**20, 1024 * 2**20),
         ),
         backends=SimpleNamespace(cudnn=SimpleNamespace(version=lambda: 9100)),
     )

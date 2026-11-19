@@ -8,6 +8,7 @@ import yaml
 
 from .calibration_settings import CalibrationSettings
 from .detection_settings import DetectionSettings
+from .unet.settings import UNetSettings
 
 
 @dataclass(frozen=True)
@@ -23,6 +24,9 @@ class Config:
     detection: DetectionSettings = DetectionSettings()
     detection_output_dir: Path = Path("results/detection_baselines")
     series_csv: Optional[Path] = None
+    unet: UNetSettings = UNetSettings()
+    unet_output_dir: Path = Path("results/unet")
+    dataset_split_csv: Optional[Path] = None
 
 
 def load_config(path: Optional[Union[str, Path]] = None) -> Config:
@@ -84,6 +88,18 @@ def load_config(path: Optional[Union[str, Path]] = None) -> Config:
     if content.get("data", {}).get("series_csv") is not None:
         series_csv = local_path("data", "series_csv")
 
+    try:
+        unet = UNetSettings(**content.get("unet", {}))
+    except (TypeError, ValueError) as error:
+        raise ValueError(f"{path}: invalid U-Net settings: {error}") from error
+
+    unet_output = (path.parent / "results/unet").resolve()
+    if "unet_directory" in content["output"]:
+        unet_output = local_path("output", "unet_directory")
+    split_csv = None
+    if content["data"].get("dataset_split_csv") is not None:
+        split_csv = local_path("data", "dataset_split_csv")
+
     return Config(
         annotations_csv=annotations_csv,
         setups_csv=setups_csv,
@@ -96,4 +112,7 @@ def load_config(path: Optional[Union[str, Path]] = None) -> Config:
         detection=detection,
         detection_output_dir=detection_output,
         series_csv=series_csv,
+        unet=unet,
+        unet_output_dir=unet_output,
+        dataset_split_csv=split_csv,
     )

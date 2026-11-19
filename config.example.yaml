@@ -3,6 +3,7 @@ data:
   setups_csv: "data/laser_setups.csv"
   images_dir: "images"
   # series_csv: "data/capture_series.csv"
+  # dataset_split_csv: "results/detection_baselines/hsv_comparison/dataset_split.csv"
 image:
   width: 3072
   height: 2048
@@ -10,6 +11,7 @@ output:
   directory: "results/inspection"
   calibration_directory: "results/calibration"
   detection_directory: "results/detection_baselines"
+  unet_directory: "results/unet"
 calibration:
   ransac_threshold: 10
   ransac_trials: 256
@@ -48,3 +50,28 @@ detection:
     saturation_max: 255
     value_min: 150
     value_max: 255
+unet:
+  cpu:
+    device: cpu
+    image_size: [384, 256]
+    batch_size: 2
+    base_channels: 8
+    epochs: 5
+    num_workers: 0
+    target: binary_circle
+    radius: 4
+    sigma: 3
+    loss: bce_dice
+    foreground_weight: 20
+    learning_rate: 0.001
+    patience: 5
+    seed: 42
+    confidence: 0.5
+    nms_radius: 8
+  cuda:
+    device: cuda
+    image_size: [768, 512]
+    batch_size: 2
+    base_channels: 16
+    epochs: 40
+    num_workers: 2

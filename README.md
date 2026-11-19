@@ -6,8 +6,8 @@
 
 Проект поддерживает Python 3.9 и 3.11. Выполняйте команды из корня клонированного
 репозитория. Анализ данных, калибровка и цветовые детекторы работают на CPU.
-PyTorch и torchvision используются только опциональной диагностикой окружения
-и отсутствуют в зависимостях проекта, включая `[dev]`.
+PyTorch нужен для U-Net. Диагностика проверяет PyTorch и torchvision.
+Оба пакета отсутствуют в зависимостях проекта, включая `[dev]`.
 
 ### Windows CPU, Python 3.11
 
@@ -80,7 +80,7 @@ python -m pytest
 ```
 
 Тесты создают синтетические CSV и изображения во временных каталогах и
-выполняют все три ноутбука. GitHub Actions запускает их на Windows с Python
+выполняют все четыре ноутбука при установленном PyTorch. GitHub Actions запускает их на Windows с Python
 3.9 и 3.11 в CPU-окружениях. Проверка GTX 1070 выполняется отдельно.
 
 ## Геометрическая калибровка
@@ -231,3 +231,78 @@ TP/FP/FN/TN оценивают наличие пары. Крупная коор�
 импортов и ячейку «Сравнение из сохранённых CSV» с `SAVED_RUN` и `SAVED_SPLIT`.
 Она читает `metrics_by_method.csv` и `timings.csv`. Для прежнего двухметодного
 экспорта в корне папки результатов задайте `SAVED_RUN = "."`.
+
+## U-Net для детекции лазерных отметок
+
+Четырёхуровневая U-Net получает уменьшенный RGB-кадр и предсказывает одну карту
+логитов. Целевые карты строятся при чтении кадра из исходных координат с учётом
+центров пикселей. По умолчанию `binary_circle` рисует круги радиуса 4 px.
+Для `gaussian` с `sigma: 3` карта — максимум двух гауссовых пятен.
+Кадр без разметки получает нулевую карту. Радиус и sigma заданы в пикселях входа
+сети. Для кругов доступны `bce`, `dice`, `bce_dice`, для гауссовых пятен —
+`weighted_mse`. Параметр `foreground_weight` усиливает вклад области лазеров в
+BCE и MSE. Инференс применяет sigmoid, ищет локальные максимумы, подавляет
+соседние пики в радиусе `nms_radius` и выбирает пару выше порога `confidence`.
+
+### Установка и запуск
+
+Для CPU на Windows с Python 3.11 установите PyTorch в CPU-окружение из
+инструкции выше. Выполняйте команду его интерпретатором:
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install torch==2.7.1 torchvision==0.22.1 --index-url https://download.pytorch.org/whl/cpu
+.\.venv\Scripts\python.exe -m laser_detection.train --profile cpu
+```
+
+Для GTX 1070 активируйте существующее окружение Python 3.9 с PyTorch
+`2.7.1+cu126` и torchvision `0.22.1+cu126`. Пакеты PyTorch устанавливаются
+отдельно от проекта. Перед первым обучением выполните проверку:
+
+```powershell
+python -m laser_detection.check_environment --require-cuda
+python -m laser_detection.train --profile cuda
+python -m pytest -q tests/test_unet.py -k cuda
+```
+
+Для GPU ожидается `PASSED` в диагностике и исполненный CUDA-тест pytest.
+Статус `SKIPPED` означает, что CUDA-операции не проверены. Явный режим `cuda`
+завершается ошибкой при недоступности устройства или сбое forward/backward.
+Оба профиля используют float32. Параметры описаны в
+[`config.example.yaml`](config.example.yaml). CPU начинает с 384×256 и
+`base_channels: 8`, CUDA — с 768×512 и `base_channels: 16`. При нехватке
+памяти уменьшите `batch_size` до 1 или уменьшите `image_size`. В ноутбуке
+загрузка выполняется с `num_workers: 0`. CLI поддерживает workers из профиля.
+
+### Разбиение, обучение и результаты
+
+Укажите `data.dataset_split_csv`, чтобы явно переиспользовать сохранённое
+разбиение. При наличии одного экспорта baseline оно подбирается автоматически.
+Режим по сериям использует `data.series_csv` и проверяет, что серия целиком
+попадает в одну часть. При отсутствии серий случайное разбиение по кадрам
+помечается как `exploratory`. Сохранённый список кадров проверяется при
+возобновлении и сравнении. Подбирайте настройки только по train/validation.
+
+Обучение с Adam сохраняет `best.pt` по validation loss, `last.pt` для
+возобновления, историю эпох, конфигурацию и разбиение в новой папке
+`results/unet/`. Для возобновления увеличьте `epochs` в профиле до нового
+общего числа эпох и передайте `--resume results/unet/RUN/last.pt`.
+Загрузка использует `state_dict` и `weights_only=True` в PyTorch.
+
+```powershell
+python -m laser_detection.infer --checkpoint results/unet/RUN/best.pt --image frame.png --device cpu
+python -m laser_detection.evaluate_unet --checkpoint results/unet/RUN/best.pt --device cpu --partition validation
+python -m laser_detection.evaluate_unet --checkpoint results/unet/RUN/best.pt --device cuda --partition test
+```
+
+Сравнение использует одинаковые доступные кадры у U-Net и HSV Legacy. Метрики
+считаются в исходных пикселях и сохраняются вместе с предсказаниями, сводкой
+времени и разбивкой по сетапам. Время включает подготовку кадра и
+постобработку, исключает чтение с диска, а CUDA синхронизируется. В таблице
+указаны устройство и входное разрешение каждого метода. Для сравнения CPU и
+CUDA запустите оценку одного checkpoint и одной части данных дважды с
+соответствующим `--device`. Используйте `--run-name` для именованных запусков.
+
+[`04_unet_laser_detection.ipynb`](notebooks/04_unet_laser_detection.ipynb)
+показывает целевую карту, историю потерь, heatmap предсказания, центры и
+результаты сравнения. Диагностические изображения и checkpoints остаются
+локально. Тесты CPU и синтетические ноутбуки поддерживают Python 3.9 и 3.11.

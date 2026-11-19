@@ -23,6 +23,8 @@ image: {width: 32, height: 24}
 output: {directory: results/inspection}
 calibration: {training_sizes: [2], repetitions: 1, contamination_training_size: 2}
 detection: {width: 16, height: 12, warmup_frames: 1}
+unet:
+  cpu: {image_size: [16, 16], base_channels: 2, epochs: 1, batch_size: 1}
 """, encoding="utf-8")
     rows = ["image;x1;y1;x2;y2"]
     for index in range(3):
@@ -41,8 +43,13 @@ detection: {width: 16, height: 12, warmup_frames: 1}
     "01_dataset_inspection.ipynb",
     "02_geometry_calibration.ipynb",
     "03_detection_baselines.ipynb",
+    "04_unet_laser_detection.ipynb",
 ])
-def test_notebook_executes_on_synthetic_data(name, notebook_workspace):
+def test_notebook_executes_on_synthetic_data(name, notebook_workspace, monkeypatch):
+    if name.startswith("04_"):
+        pytest.importorskip("torch")
+        monkeypatch.setenv("OMP_NUM_THREADS", "1")
+        monkeypatch.setenv("MKL_NUM_THREADS", "1")
     source = Path(__file__).resolve().parents[1] / "notebooks" / name
     notebook = nbformat.read(source, as_version=4)
     nbformat.validate(notebook)

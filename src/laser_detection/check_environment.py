@@ -2,6 +2,7 @@
 
 import argparse
 import importlib
+from importlib.metadata import PackageNotFoundError, version
 import platform
 import sys
 
@@ -50,11 +51,17 @@ def main(argv=None):
 
     print(f"Python: {platform.python_version()} ({sys.executable})")
     print(f"Platform: {platform.platform()}")
+    for package in ("numpy", "pandas", "opencv-python", "Pillow", "PyYAML", "plotly", "matplotlib", "jupyterlab"):
+        try:
+            print(f"{package}: {version(package)}")
+        except PackageNotFoundError:
+            continue
     stage = "PyTorch import"
     try:
         torch = _optional_import("torch")
         if torch is None:
             print("PyTorch: not installed (optional)")
+            print("CUDA available: False")
             print("CUDA forward/backward: SKIPPED")
             return 1 if args.require_cuda else 0
 
@@ -77,7 +84,10 @@ def main(argv=None):
         name = torch.cuda.get_device_name(args.device)
         major, minor = torch.cuda.get_device_capability(args.device)
         print(f"CUDA device {args.device}: {name}, compute capability {major}.{minor}")
-        print(f"PyTorch CUDA build architectures: {', '.join(torch.cuda.get_arch_list()) or 'unknown'}")
+        architectures = getattr(torch.cuda, "get_arch_list", lambda: [])()
+        print(f"PyTorch CUDA build architectures: {', '.join(architectures) or 'unknown'}")
+        free, total = torch.cuda.mem_get_info(args.device)
+        print(f"CUDA memory: {free / 2**20:.0f} MiB free / {total / 2**20:.0f} MiB total")
         print(f"cuDNN version: {torch.backends.cudnn.version()}")
         stage = "CUDA forward/backward smoke test"
         _cuda_smoke_test(torch, args.device)
