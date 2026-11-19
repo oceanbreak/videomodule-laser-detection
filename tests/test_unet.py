@@ -117,7 +117,7 @@ def test_saved_split_series_and_exploratory_protocol(config_path):
         training_split(frame, config, 99, saved=split_path)
 
 
-def test_train_resume_infer_and_evaluate_cli(config_path):
+def test_train_resume_infer_and_evaluate_cli(config_path, capsys):
     config = load_config(config_path)
     frame = load_dataset(config)
     image, target, meta = HeatmapDataset(frame, config, config.unet.cpu)[0]
@@ -128,9 +128,16 @@ def test_train_resume_infer_and_evaluate_cli(config_path):
     assert train_main([*cli, "--profile", "cpu", "--run-name", "synthetic"]) == 0
     run = config.unet_output_dir / "synthetic"
     assert read_checkpoint(run / "last.pt")["epoch"] == 1
-    config_path.write_text(config_path.read_text().replace("epochs: 1", "epochs: 2"))
+    initial = capsys.readouterr()
+    assert "Training" in initial.err and "Validation" in initial.err
+    assert "Epoch 1: train_loss=" in initial.out and "val_loss=" in initial.out and "time=" in initial.out
+    config_path.write_text(config_path.read_text().replace("epochs: 1", "epochs: 2, show_progress: false"))
     assert train_main([*cli, "--resume", str(run / "last.pt")]) == 0
+    resumed = capsys.readouterr()
+    assert "Training" not in resumed.err and "Validation" not in resumed.err
+    assert "Epoch 2: train_loss=" in resumed.out
     state = read_checkpoint(run / "last.pt")
+    assert "show_progress" not in state["profile"]
     assert state["epoch"] == 2 and len(state["history"]) == 2 and state["optimizer"]["state"]
     checkpoint = run / "best.pt"
     options = [*cli, "--checkpoint", str(checkpoint), "--device", "cpu"]
@@ -156,3 +163,56 @@ def test_cuda_unet_forward_backward():
     model(image).square().mean().backward()
     torch.cuda.synchronize(device)
     assert image.grad is not None and torch.isfinite(image.grad).all()
+
+
+@pytest.mark.parametrize("enabled", [True, False])
+def test_epoch_progress_weights_incomplete_batch(monkeypatch, enabled):
+    from laser_detection.unet import training
+
+    bars = []
+
+    class Progress:
+        def __init__(self, **options):
+            self.options = options
+            self.updates = 0
+            self.postfixes = []
+            bars.append(self)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            self.closed = True
+
+        def set_postfix(self, *, loss, lr, refresh):
+            self.postfixes.append((loss, lr, refresh))
+
+        def update(self):
+            self.updates += 1
+
+    monkeypatch.setattr(training, "tqdm", Progress)
+    monkeypatch.setattr(training, "heatmap_loss", lambda logits, target, profile: logits.mean())
+    images = torch.tensor([[1.0], [3.0], [8.0]])
+    loader = torch.utils.data.DataLoader(
+        torch.utils.data.TensorDataset(images, images, images), batch_size=2,
+    )
+    model = torch.nn.Linear(1, 1, bias=False)
+    with torch.no_grad():
+        model.weight.fill_(1)
+    optimizer = torch.optim.SGD(model.parameters(), lr=0)
+    profile = Profile(show_progress=enabled)
+    for phase_optimizer in (optimizer, None):
+        average = training._epoch(
+            model, loader, profile, torch.device("cpu"), epoch=3, learning_rate=0.001,
+            optimizer=phase_optimizer,
+        )
+        assert average == 4
+
+    assert len(bars) == 2
+    for phase, bar in zip(("Training", "Validation"), bars):
+        assert bar.options["desc"] == f"Epoch 3 · {phase}"
+        assert bar.options["total"] == 2
+        assert bar.options["disable"] is not enabled
+        assert bar.closed
+        assert bar.updates == (2 if enabled else 0)
+        assert bar.postfixes == ([("2.000000", "0.001", False), ("4.000000", "0.001", False)] if enabled else [])

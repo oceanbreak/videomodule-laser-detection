@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "laser-dataset-inspector"
 version = "0.1.0"
 requires-python = ">=3.9"
-dependencies = ["numpy>=1.26", "pandas>=2.1", "plotly>=6", "PyYAML>=6", "Pillow>=10", "opencv-python>=4.8"]
+dependencies = ["numpy>=1.26", "pandas>=2.1", "plotly>=6", "PyYAML>=6", "Pillow>=10", "opencv-python>=4.8", "tqdm>=4.66"]
 
 [project.optional-dependencies]
 dev = [

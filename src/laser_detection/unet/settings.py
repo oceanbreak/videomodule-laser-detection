@@ -22,8 +22,11 @@ class Profile:
     seed: int = 42
     confidence: float = 0.5
     nms_radius: float = 8
+    show_progress: bool = True
 
     def __post_init__(self):
+        if type(self.show_progress) is not bool:
+            raise ValueError("show_progress must be true or false")
         if self.device not in ("cpu", "cuda", "auto"):
             raise ValueError("device must be cpu, cuda or auto")
         size = self.image_size

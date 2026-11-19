@@ -102,9 +102,11 @@ def compare_checkpoint(frame, config, predictor, *, run_name=None, partition="te
     }
     for name, table in tables.items():
         table.to_csv(output / f"{name}.csv", index=False)
+    profile_settings = asdict(predictor.profile)
+    profile_settings.pop("show_progress")
     (output / "evaluation_config.json").write_text(json.dumps({
         "checkpoint": checkpoint.name, "partition": partition, "protocol": protocol,
-        "unet": asdict(predictor.profile), "unet_device": str(predictor.device),
+        "unet": profile_settings, "unet_device": str(predictor.device),
         "hsv_legacy": asdict(config.detection.hsv_legacy), "hsv_input_size": size,
         "torch": str(torch.__version__), "opencv": cv2.__version__, "platform": platform.platform(),
         "torch_cpu_threads": torch.get_num_threads(), "opencv_threads": cv2.getNumThreads(),

@@ -15,6 +15,7 @@ import numpy as np
 import pandas as pd
 import torch
 from torch.utils.data import DataLoader
+from tqdm.auto import tqdm
 
 from ..check_environment import _cuda_smoke_test
 from .data import HeatmapDataset, training_split
@@ -38,11 +39,16 @@ def select_device(requested):
     return torch.device("cuda", index)
 
 
-def _epoch(model, loader, profile, device, optimizer=None):
+def _epoch(model, loader, profile, device, *, epoch, learning_rate, optimizer=None):
     training = optimizer is not None
     model.train(training)
     total = 0.0
-    with torch.set_grad_enabled(training):
+    processed = 0
+    phase = "Training" if training else "Validation"
+    with torch.set_grad_enabled(training), tqdm(
+        total=len(loader), desc=f"Epoch {epoch} · {phase}", unit="batch",
+        disable=not profile.show_progress,
+    ) as progress:
         for image, target, _ in loader:
             image, target = image.to(device), target.to(device)
             if training:
@@ -54,8 +60,12 @@ def _epoch(model, loader, profile, device, optimizer=None):
             if training:
                 loss.backward()
                 optimizer.step()
+            processed += len(image)
             total += value * len(image)
-    return total / len(loader.dataset)
+            if profile.show_progress:
+                progress.set_postfix(loss=f"{total / processed:.6f}", lr=f"{learning_rate:.3g}", refresh=False)
+                progress.update()
+    return total / processed
 
 
 def _save_checkpoint(path, state):
@@ -113,7 +123,7 @@ def train_run(frame, config, profile, *, run_name=None, resume=None):
         state = read_checkpoint(last)
         previous = Profile(**state["profile"])
         if replace(previous, epochs=profile.epochs, device=profile.device,
-                   num_workers=profile.num_workers) != profile:
+                   num_workers=profile.num_workers, show_progress=profile.show_progress) != profile:
             raise ValueError("Resume must keep training settings except epochs, device and num_workers")
         if profile.epochs <= state["epoch"]:
             raise ValueError("Set epochs above the checkpoint epoch to continue")
@@ -126,8 +136,10 @@ def train_run(frame, config, profile, *, run_name=None, resume=None):
         splits = training_split(frame, config, profile.seed)
         run = _new_run(config.unet_output_dir, run_name)
         splits.to_csv(run / "dataset_split.csv", index=False)
+    profile_settings = asdict(profile)
+    profile_settings.pop("show_progress")  # Display preference is not part of saved training state.
     (run / "experiment_config.json").write_text(json.dumps({
-        "profile": asdict(profile), "resolved_device": str(device),
+        "profile": profile_settings, "resolved_device": str(device),
         "original_size": [config.width, config.height], "torch": str(torch.__version__),
         "numpy": np.__version__, "opencv": cv2.__version__,
         "protocol": splits["protocol"].iloc[0],
@@ -161,14 +173,19 @@ def train_run(frame, config, profile, *, run_name=None, resume=None):
 
     for epoch in range(len(history) + 1, profile.epochs + 1):
         started = perf_counter()
-        train_loss = _epoch(model, train, profile, device, optimizer)
-        val_loss = _epoch(model, validation, profile, device)
+        learning_rate = optimizer.param_groups[0]["lr"]
+        train_loss = _epoch(model, train, profile, device, epoch=epoch,
+                            learning_rate=learning_rate, optimizer=optimizer)
+        val_loss = _epoch(model, validation, profile, device, epoch=epoch,
+                          learning_rate=learning_rate)
+        seconds = perf_counter() - started
         history.append({"epoch": epoch, "train_loss": train_loss,
-                        "validation_loss": val_loss, "seconds": perf_counter() - started})
+                        "validation_loss": val_loss, "seconds": seconds})
+        print(f"Epoch {epoch}: train_loss={train_loss:.6f}  val_loss={val_loss:.6f}  time={seconds:.2f}s")
         improved = val_loss < best
         best, stale = (val_loss, 0) if improved else (best, stale + 1)
         checkpoint = {
-            "format_version": 1, "epoch": epoch, "profile": asdict(profile),
+            "format_version": 1, "epoch": epoch, "profile": profile_settings,
             "split_digest": digest, "original_size": [config.width, config.height],
             "model": model.state_dict(), "optimizer": optimizer.state_dict(),
             "best_loss": best, "stale": stale, "history": history,
